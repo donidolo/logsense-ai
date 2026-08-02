@@ -45,7 +45,7 @@ AI-powered log diagnosis and analytics platform built on Snowflake Cortex Code.
 - Snowflake account with **Cortex AI** enabled (AI_COMPLETE, Cortex Search)
 - A warehouse (e.g., `COMPUTE_WH`)
 - ACCOUNTADMIN or equivalent role for initial setup
-- [Cortex Code (CoCo) CLI](https://docs.snowflake.com/en/user-guide/cortex-code) (optional, for deployment)
+- [Cortex Code (CoCo) CLI](https://docs.snowflake.com/en/user-guide/cortex-code) (for deployment)
 
 ## Quick Start
 
