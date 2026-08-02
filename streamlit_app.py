@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 
+import re
+
 st.set_page_config(page_title="LogSense AI", layout="wide")
 
 session = st.connection("snowflake").session()
@@ -202,6 +204,19 @@ if search_query:
     if not results:
         st.warning("No matching logs found.")
     else:
+        # Check relevance: at least some query keywords must appear in results
+        query_words = [w.lower() for w in re.findall(r'\w{3,}', search_query)]
+        if query_words:
+            all_messages = " ".join(
+                r.get("MESSAGE", "") or "" for r in results
+            ).lower()
+            matched_words = [w for w in query_words if w in all_messages]
+            if not matched_words:
+                results = []
+
+    if not results:
+        st.info("No relevant logs found for your query. Try different keywords or check your APP_NAME filter.")
+    elif results:
         logs_df = pd.DataFrame(results)
         logs_df = logs_df.drop(columns=["@scores"], errors="ignore")
         logs_df.columns = [c.upper() for c in logs_df.columns]
