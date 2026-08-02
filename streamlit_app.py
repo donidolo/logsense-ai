@@ -75,6 +75,15 @@ with st.sidebar:
         st.caption("Preview of recently parsed rows:")
         st.dataframe(preview, use_container_width=True)
 
+    # --- Sidebar: Search Settings ---
+    st.divider()
+    st.header("Search Settings")
+    relevance_threshold = st.slider(
+        "Relevance Threshold",
+        min_value=0.1, max_value=0.9, value=0.3, step=0.05,
+        help="Filter out results below this relevance score"
+    )
+
     # --- Sidebar: Manage Logs ---
     st.divider()
     st.header("Manage Logs")
@@ -163,7 +172,11 @@ def search_logs(query, app_name_filter=None, limit=50):
         )) AS results
     """).to_pandas()
     parsed = json.loads(result["RESULTS"].iloc[0])
-    return parsed.get("results", [])
+    results = parsed.get("results", [])
+    for r in results:
+        score = r.pop("@scores", None)
+        r["_relevance_score"] = score.get("overall", 0.0) if isinstance(score, dict) else 0.0
+    return results
 
 def call_ai_complete(system_prompt, user_content):
     models = ["mistral-large2", "llama3.1-70b", "claude-3-5-sonnet"]
@@ -199,20 +212,23 @@ if search_query:
     with st.spinner("Searching logs..."):
         results = search_logs(search_query, app_filter)
 
+    # Filter by relevance threshold
+    results = [r for r in results if r.get("_relevance_score", 0) >= relevance_threshold]
+
     if not results:
-        st.warning("No matching logs found.")
+        st.info("No relevant logs found for your query. Try different keywords or check your APP_NAME filter.")
     else:
         logs_df = pd.DataFrame(results)
-        logs_df = logs_df.drop(columns=["@scores"], errors="ignore")
         logs_df.columns = [c.upper() for c in logs_df.columns]
+
+        # Sort by relevance score descending
+        logs_df = logs_df.sort_values("_RELEVANCE_SCORE", ascending=False).reset_index(drop=True)
 
         st.subheader(f"Matching Log Entries ({len(logs_df)} results)")
         logs_df["SEVERITY"] = logs_df["MESSAGE"].apply(classify_severity)
 
-        # Sort by severity: Critical first, then High, Medium, Low
-        severity_order_map = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-        logs_df["_SEV_SORT"] = logs_df["SEVERITY"].map(severity_order_map)
-        logs_df = logs_df.sort_values("_SEV_SORT").drop(columns=["_SEV_SORT"]).reset_index(drop=True)
+        # Display columns (hide internal score column)
+        display_cols = [c for c in logs_df.columns if c != "_RELEVANCE_SCORE"]
 
         # Pagination
         page_size = 10
@@ -220,7 +236,7 @@ if search_query:
         page = st.selectbox("Page", range(1, total_pages + 1), format_func=lambda x: f"Page {x} of {total_pages}")
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
-        st.dataframe(logs_df.iloc[start_idx:end_idx], use_container_width=True)
+        st.dataframe(logs_df[display_cols].iloc[start_idx:end_idx], use_container_width=True)
         st.caption(f"Showing rows {start_idx + 1}-{min(end_idx, len(logs_df))} of {len(logs_df)}")
 
         # Severity breakdown chart
