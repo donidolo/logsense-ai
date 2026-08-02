@@ -87,3 +87,10 @@ AI-powered log diagnosis and analytics platform built on Snowflake Cortex.
 ## Team
 
 Built by **Team Espada**
+- Doni
+- Ivana
+- Yunata
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
