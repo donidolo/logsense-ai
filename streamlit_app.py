@@ -163,7 +163,11 @@ def search_logs(query, app_name_filter=None, limit=50):
         )) AS results
     """).to_pandas()
     parsed = json.loads(result["RESULTS"].iloc[0])
-    return parsed.get("results", [])
+    results = parsed.get("results", [])
+    for r in results:
+        score = r.pop("@scores", None)
+        r["_relevance_score"] = score.get("overall", 0.0) if isinstance(score, dict) else 0.0
+    return results
 
 def call_ai_complete(system_prompt, user_content):
     models = ["mistral-large2", "llama3.1-70b", "claude-3-5-sonnet"]
@@ -199,11 +203,15 @@ if search_query:
     with st.spinner("Searching logs..."):
         results = search_logs(search_query, app_filter)
 
+    # Filter out low-relevance results and sort by score
+    results = [r for r in results if r.get("_relevance_score", 0) >= 0.3]
+    results.sort(key=lambda r: r.get("_relevance_score", 0), reverse=True)
+
     if not results:
-        st.warning("No matching logs found.")
+        st.info("No relevant logs found for your query. Try different keywords or check your APP_NAME filter.")
     else:
         logs_df = pd.DataFrame(results)
-        logs_df = logs_df.drop(columns=["@scores"], errors="ignore")
+        logs_df = logs_df.drop(columns=["_relevance_score"], errors="ignore")
         logs_df.columns = [c.upper() for c in logs_df.columns]
 
         st.subheader(f"Matching Log Entries ({len(logs_df)} results)")
