@@ -1,6 +1,6 @@
 # LogSense AI
 
-AI-powered log diagnosis and analytics platform built on Snowflake Cortex.
+AI-powered log diagnosis and analytics platform built on Snowflake Cortex Code.
 
 ## Features
 
