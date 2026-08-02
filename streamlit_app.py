@@ -75,6 +75,58 @@ with st.sidebar:
         st.caption("Preview of recently parsed rows:")
         st.dataframe(preview, use_container_width=True)
 
+    # --- Sidebar: Manage Logs ---
+    st.divider()
+    st.header("Manage Logs")
+
+    @st.cache_data(ttl=30)
+    def get_log_files():
+        df = session.sql(
+            "SELECT APP_NAME, SOURCE_FILE, COUNT(*) AS ROW_COUNT, "
+            "MIN(INGESTED_AT) AS INGESTED_AT "
+            "FROM KAFKA_LOGS.RAW.PARSED_LOGS "
+            "GROUP BY APP_NAME, SOURCE_FILE "
+            "ORDER BY INGESTED_AT DESC"
+        ).to_pandas()
+        return df
+
+    log_files_df = get_log_files()
+
+    if log_files_df.empty:
+        st.caption("No log files ingested yet.")
+    else:
+        options = {
+            f"{row['APP_NAME']} - {row['SOURCE_FILE']} ({row['ROW_COUNT']} rows)": {
+                "app_name": row["APP_NAME"],
+                "source_file": row["SOURCE_FILE"],
+                "row_count": row["ROW_COUNT"]
+            }
+            for _, row in log_files_df.iterrows()
+        }
+
+        selected = st.multiselect("Select log files to delete", list(options.keys()))
+
+        if selected:
+            total_rows_selected = sum(options[s]["row_count"] for s in selected)
+            st.warning(
+                f"Are you sure you want to delete **{len(selected)}** file(s) "
+                f"(**{total_rows_selected}** total rows)?"
+            )
+            confirm = st.checkbox("Yes, I confirm deletion")
+
+            if st.button("Delete Selected", type="primary", disabled=not confirm):
+                conditions = " OR ".join(
+                    f"(APP_NAME = '{options[s]['app_name'].replace(chr(39), chr(39)+chr(39))}' "
+                    f"AND SOURCE_FILE = '{options[s]['source_file'].replace(chr(39), chr(39)+chr(39))}')"
+                    for s in selected
+                )
+                session.sql(
+                    f"DELETE FROM KAFKA_LOGS.RAW.PARSED_LOGS WHERE {conditions}"
+                ).collect()
+                st.success(f"Deleted {total_rows_selected} rows from {len(selected)} file(s).")
+                st.cache_data.clear()
+                st.rerun()
+
 # --- Main Area ---
 st.title("LogSense AI (Diagnosis and Analytics)")
 
