@@ -2,65 +2,127 @@
 
 ## Overview
 
-LogSense AI is a fully Snowflake-native log analytics platform. All processing, storage, search, and AI inference run inside Snowflake with zero external dependencies.
+LogSense AI is a fully Snowflake-native log analytics platform. All ingestion, parsing, search, AI inference, and incident management run inside Snowflake with zero external dependencies.
 
 ## Components
 
-### 1. Data Layer (`KAFKA_LOGS.RAW.PARSED_LOGS`)
+### 1. Ingestion Layer (Dual-Path)
 
-Central table storing all parsed log entries with:
-- Auto-incrementing `LOG_ID`
-- `APP_NAME` for multi-application support
-- Extracted `TIMESTAMP`, `LOG_LEVEL`, `COMPONENT`, `MESSAGE`
-- `INGESTED_AT` for tracking ingestion time
+**Manual Path (Streamlit Upload):**
+- User uploads `.log`/`.txt`/`.csv` files via the dashboard sidebar
+- `PARSE_ANY_LOG` stored procedure splits content into lines, applies multi-format regex extraction
+- Parsed rows written directly to `PARSED_LOGS` with `INGESTED_AT = CURRENT_TIMESTAMP()`
 
-### 2. Ingestion Layer (`PARSE_ANY_LOG` Stored Procedure)
+**Automated Path (Snowpipe Streaming):**
+- External applications (Kafka, Docker containers, PowerShell scripts) write log files to `@AUTO_INGEST_STAGE`
+- `LOG_AUTO_PIPE` (Snowpipe) continuously loads raw lines into `RAW_LOG_LANDING`
+- `AUTO_PARSE_TASK` runs every 5 minutes:
+  - Picks up rows where `PROCESSED = FALSE`
+  - Applies regex parsing (timestamp, log level, component extraction)
+  - Inserts structured rows into `PARSED_LOGS`
+  - Marks source rows as `PROCESSED = TRUE`
 
-A SQL stored procedure that:
-- Splits raw log file content into individual lines
-- Applies multiple regex patterns to extract structured fields
-- Handles various timestamp formats (ISO 8601, syslog, bracketed)
-- Auto-detects log levels (TRACE through FATAL)
-- Identifies components from common log formats
+### 2. Data Layer
+
+| Table | Purpose |
+|-------|---------|
+| `PARSED_LOGS` | Central structured log store (all parsed entries) |
+| `RAW_LOG_LANDING` | Staging table for Snowpipe raw ingestion |
+| `SERVICE_REGISTRY` | Business context: tier, team, function, customers, deploy info |
+| `INCIDENT_TICKETS` | Ticket lifecycle management (Open → In Progress → Resolved) |
+| `AUDIT_RESOLUTIONS` | Past fix records for postmortem search |
 
 ### 3. Search Layer (Cortex Search Service)
 
-- Uses `snowflake-arctic-embed-m-v1.5` for vector embeddings
-- Indexes the `MESSAGE` column for semantic search
-- Filters on `APP_NAME`, `LOG_LEVEL`, `COMPONENT`
-- Auto-refreshes incrementally every 1 minute
+- Service: `LOG_SEARCH_SERVICE`
+- Embedding model: `snowflake-arctic-embed-m-v1.5`
+- Search column: `MESSAGE`
+- Attribute filters: `APP_NAME`, `LOG_LEVEL`, `COMPONENT`
+- Refresh: Incremental, 1-minute target lag
+- Used by: keyword search, AI diagnosis context retrieval, chat assistant
 
-### 4. AI Diagnosis Layer (Cortex AI Complete)
+### 4. AI Layer (Cortex AI Complete)
 
-- Multi-model fallback: Mistral Large 2 -> Llama 3.1 70B -> Claude 3.5 Sonnet
-- Structured output: ROOT CAUSE, SEVERITY, IMPACT, FIX STEPS, PREVENTION
-- Context-aware analysis using search results + user query
+- **Diagnosis:** Structured output — ROOT CAUSE, SEVERITY, IMPACT, FIX STEPS, PREVENTION
+- **Chat Assistant:** Conversational analysis with persistent history
+- **Severity Classification:** Auto-classifies diagnosis severity (Critical/High/Medium/Low)
+- **Model fallback chain:** llama3.3-70b → llama3.1-70b
+- **Context building:** Search results + Service Registry business data + user query
 
-### 5. Presentation Layer (Streamlit in Snowflake)
+### 5. Business Context Layer (Service Registry)
 
-- Sidebar: File upload and ingestion with progress tracking
-- Main: Search, filter, paginated results, severity charts, AI diagnosis
-- Runs on `COMPUTE_WH` warehouse
+The `SERVICE_REGISTRY` table enriches log analysis with:
+- Service tier (Tier-1/2/3) for priority classification
+- Team owner for routing
+- Business function for impact assessment
+- Customer impact scope
+- Last deploy version/date for correlation
+- Jira project key and PagerDuty service ID for integration
+
+### 6. Action Layer
+
+- **Incident Tickets:** Create tickets from diagnosis, manage status lifecycle
+- **Audit Resolutions:** Log resolution notes, link to tickets, enable postmortem search
+- **Export Reports:** Download diagnosis reports for external sharing
+- **Past Fix Search:** AI-powered search across resolved incidents for similar patterns
+
+### 7. Presentation Layer (Streamlit in Snowflake)
+
+- **Sidebar:** File upload, app name input, ingestion progress
+- **Dashboard tab:** Metric cards, severity timeline chart, log volume by app
+- **Search & Diagnose tab:** Semantic search, AI diagnosis with business context panel
+- **Incident Tracker tab:** Ticket list, status management, resolution logging
+- **AI Chat tab:** Conversational interface for iterative log analysis
+
+### 8. CoCo CLI Agent Skills
+
+Four custom skills for headless automation:
+- `log-ingest`: Ingest log files from local filesystem
+- `log-diagnose`: Run AI diagnosis on a component or search query
+- `log-frequency`: Check error frequency and detect spikes
+- `log-postmortem`: Search past resolutions for similar issues
 
 ## Data Flow Diagram
 
 ```
-[Log Files] --> [Streamlit Upload] --> [PARSE_ANY_LOG SP]
-                                             |
-                                             v
-                                      [PARSED_LOGS Table]
-                                             |
-                              +--------------+--------------+
-                              |                             |
-                              v                             v
-                    [Cortex Search Service]        [Direct SQL Queries]
-                              |                             |
-                              v                             v
-                    [Semantic Search Results]      [App Filter / Stats]
-                              |
-                              v
-                    [Cortex AI Complete]
-                              |
-                              v
-                    [Diagnosis Report]
+┌─────────────────────────────────────────────────────────────────┐
+│                      INGESTION                                   │
+│                                                                 │
+│   [Streamlit Upload]          [Kafka / Docker / Script]         │
+│         │                              │                        │
+│         v                              v                        │
+│   PARSE_ANY_LOG SP            AUTO_INGEST_STAGE                 │
+│         │                              │                        │
+│         │                     LOG_AUTO_PIPE (Snowpipe)           │
+│         │                              │                        │
+│         │                     RAW_LOG_LANDING                    │
+│         │                              │                        │
+│         │                     AUTO_PARSE_TASK (5 min)            │
+│         │                              │                        │
+│         └──────────┬───────────────────┘                        │
+│                    v                                             │
+│             PARSED_LOGS                                          │
+└────────────────────┼────────────────────────────────────────────┘
+                     │
+     ┌───────────────┼───────────────────────┐
+     │               │                       │
+     v               v                       v
+ Cortex Search   SERVICE_REGISTRY      SQL Aggregations
+ Service         (business context)    (metrics/timeline)
+     │               │
+     └───────┬───────┘
+             v
+      AI_COMPLETE (llama3.3-70b)
+             │
+     ┌───────┼───────────────┐
+     v       v               v
+ Diagnosis  Chat         Severity
+ Report     Response     Classification
+     │
+     v
+ ┌────────────────────────────────────┐
+ │  INCIDENT_TICKETS                   │
+ │  AUDIT_RESOLUTIONS                  │
+ │  Export / Download                   │
+ └────────────────────────────────────┘
 ```
