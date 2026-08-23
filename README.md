@@ -20,24 +20,24 @@ AI-powered log diagnosis and analytics platform built entirely on Snowflake. Zer
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         INGESTION LAYER                                  │
+│                         INGESTION LAYER                                 │
 │                                                                         │
 │  ┌──────────────────┐         ┌──────────────────────────────────────┐  │
-│  │  Streamlit Upload │         │  Application / Kafka / Docker        │  │
-│  │  (Manual)         │         │  (Automated via PowerShell script)   │  │
+│  │ Streamlit Upload │         │  Application / Kafka / Docker        │  │
+│  │  (Manual)        │         │          (Automated )                │  │
 │  └────────┬─────────┘         └──────────────────┬───────────────────┘  │
 │           │                                      │                      │
 │           v                                      v                      │
-│  ┌────────────────────┐         ┌──────────────────────────────────┐   │
-│  │  PARSE_ANY_LOG SP   │         │  Snowpipe (LOG_AUTO_PIPE)         │   │
-│  │  (regex parsing)    │         │  AUTO_INGEST_STAGE → RAW_LOG_     │   │
-│  └────────┬────────────┘         │  LANDING                         │   │
-│           │                      └──────────────────┬────────────────┘   │
-│           │                                         │                    │
-│           │                                         v                    │
+│  ┌────────────────────┐         ┌───────────────────────────────────┐   │
+│  │  PARSE_ANY_LOG SP  │         │  Snowpipe (LOG_AUTO_PIPE)         │   │
+│  │  (regex parsing)   │         │  AUTO_INGEST_STAGE → RAW_LOG_     │   │
+│  └────────┬───────────┘         │  LANDING                          │   │
+│           │                     └──────────────────┬────────────────┘   │
+│           │                                        │                    │
+│           │                                        v                    │
 │           │                         ┌──────────────────────────────┐    │
-│           │                         │  AUTO_PARSE_TASK (5 min)      │    │
-│           │                         │  (regex parse + mark done)    │    │
+│           │                         │  AUTO_PARSE_TASK (5 min)     │    │
+│           │                         │  (regex parse + mark done)   │    │
 │           │                         └──────────────┬───────────────┘    │
 │           │                                        │                    │
 │           └────────────────┬───────────────────────┘                    │
@@ -50,10 +50,10 @@ AI-powered log diagnosis and analytics platform built entirely on Snowflake. Zer
         ┌───────────────────┼───────────────────────────┐
         │                   │                           │
         v                   v                           v
-┌───────────────┐  ┌────────────────┐  ┌──────────────────────────┐
+┌───────────────┐  ┌─────────────────┐  ┌──────────────────────────┐
 │ Cortex Search │  │ SERVICE_REGISTRY│  │ Direct SQL Queries       │
-│ Service       │  │ (business ctx) │  │ (metrics, timeline)      │
-│ (semantic)    │  └────────┬───────┘  └──────────────────────────┘
+│ Service       │  │ (business ctx)  │  │ (metrics, timeline)      │
+│ (semantic)    │  └────────┬────────┘  └──────────────────────────┘
 └───────┬───────┘           │
         │                   │
         v                   v
@@ -63,13 +63,13 @@ AI-powered log diagnosis and analytics platform built entirely on Snowflake. Zer
 └──────────────────┬───────────────────┘
                    │
                    v
-┌──────────────────────────────────────────────────────┐
-│  ACTION LAYER                                         │
+┌─────────────────────────────────────────────────────┐
+│  ACTION LAYER                                       │
 │  ┌────────────────┐ ┌──────────────────┐ ┌────────┐ │
-│  │INCIDENT_TICKETS│ │AUDIT_RESOLUTIONS │ │ Export  │ │
+│  │INCIDENT_TICKETS│ │AUDIT_RESOLUTIONS │ │ Export │ │
 │  │(ticket mgmt)   │ │(past fixes)      │ │ Report │ │
 │  └────────────────┘ └──────────────────┘ └────────┘ │
-└──────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────┘
 ```
 
 **Data Flow:**
