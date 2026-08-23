@@ -24,7 +24,7 @@ AI-powered log diagnosis and analytics platform built entirely on Snowflake. Zer
 │                                                                         │
 │  ┌──────────────────┐         ┌──────────────────────────────────────┐  │
 │  │ Streamlit Upload │         │  Application / Kafka / Docker        │  │
-│  │  (Manual)        │         │          (Automated )                │  │
+│  │  (Manual)        │         │          (Automated)                 │  │
 │  └────────┬─────────┘         └──────────────────┬───────────────────┘  │
 │           │                                      │                      │
 │           v                                      v                      │
